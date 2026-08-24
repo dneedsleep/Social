@@ -1,13 +1,13 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/dneedsleep/Social/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
 )
 
 const version = "0.0.1"
@@ -15,6 +15,7 @@ const version = "0.0.1"
 type application struct {
 	config config
 	store  store.Storage
+	logger *zap.SugaredLogger
 }
 
 type config struct {
@@ -64,6 +65,19 @@ func (app *application) mount() http.Handler {
 			})
 
 		})
+		r.Route("/users", func(r chi.Router) {
+			r.Route("/{userID}", func(r chi.Router) {
+
+				r.Use(app.userContextMiddleware)
+
+				r.Get("/", app.getUserHandler)
+				r.Get("/feed", app.getFeedHandler)
+
+				r.Put("/follow", app.followUser)
+				r.Put("/unfollow", app.unfollowUserHandler)
+				r.Get("/feed", app.getFeedHandler)
+			})
+		})
 
 	})
 	return r
@@ -79,7 +93,7 @@ func (app *application) run(mux http.Handler) error {
 		IdleTimeout:  time.Minute,
 	}
 
-	log.Printf("server has started at %s", app.config.addr)
+	app.logger.Infow("server has started at ", app.config.addr)
 
 	return srv.ListenAndServe()
 }

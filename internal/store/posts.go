@@ -21,6 +21,22 @@ type Post struct {
 	Comments  []Comment  `json:comments`
 }
 
+type PostWithMetaData struct {
+	ID        int64      `json:"id"`
+	Content   string     `json:"content"`
+	Title     string     `json:"title"`
+	UserID    int64      `json:"user_id"`
+	Tags      []string   `json:"tags"`
+	CreatedAt *time.Time `json:"created_at"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	Version   int64      `json:"version"`
+	Comments  []Comment  `json:"comments"`
+	FirstName string     `json:"first_name"`
+	LastName  string     `json:"last_name"`
+
+	CommentCount int64 `json:"comment_count"`
+}
+
 type PostsStore struct {
 	db *sql.DB
 }
@@ -148,5 +164,51 @@ func (s *PostsStore) UpdateById(ctx context.Context, p *Post) error {
 		}
 	}
 	return nil
+
+}
+
+func (s *PostsStore) GetUserFeed(ctx context.Context, p *User, pg PaginatedFeedQuery) ([]PostWithMetaData, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, QueryTimeoutDuration)
+	defer cancel()
+
+	query := `
+		 SELECT p.id , p.title , p.user_id , p.content , p.created_at , p.tags , p.version , u.first_name , u.last_name ,
+   COUNT(*) AS comment_count 
+   FROM posts p
+  LEFT JOIN comments c
+   ON c.post_id = p.id
+  JOIN users u
+   ON u.id = p.user_id
+  WHERE  p.user_id = $1
+  (p.title ILIKE '%' || $4 || '%' OR p.content ILIKE '%' || $4 || '%') AND
+			(p.tags @> $5 OR $5 = '{}')
+  GROUP BY p.id , u.first_name , u.last_name
+  ORDER BY p.created_at ` + pg.Sort + `
+	 LIMIT $2 OFFSET $3
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, &p.ID, pg.Limit, pg.Offset, pg.Search, pg.Tags)
+
+	defer rows.Close()
+
+	if err != nil {
+		return nil, err
+	}
+
+	posts := []PostWithMetaData{}
+
+	for rows.Next() {
+		var r PostWithMetaData
+		err := rows.Scan(&r.ID, &r.Title, &r.UserID, &r.Content, &r.CreatedAt, pq.Array(&r.Tags), &r.Version, &r.FirstName, &r.LastName, &r.CommentCount)
+
+		if err != nil {
+			return nil, err
+		}
+
+		posts = append(posts, r)
+	}
+
+	return posts, nil
 
 }
