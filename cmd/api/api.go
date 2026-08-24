@@ -75,7 +75,6 @@ func (app *application) mount() http.Handler {
 
 				r.Put("/follow", app.followUser)
 				r.Put("/unfollow", app.unfollowUserHandler)
-				r.Get("/feed", app.getFeedHandler)
 			})
 		})
 
